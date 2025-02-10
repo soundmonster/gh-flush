@@ -58,13 +58,13 @@ var numWorkers int
 var haltAfter int
 
 func main() {
-	flag.BoolVar(&skipPRsFromBots, "skip-bots", false, "don't delete notifications on PRs from bots")
-	flag.BoolVar(&skipClosedPRs, "skip-closed", false, "don't delete notifications on closed / merged PRs")
-	flag.BoolVar(&skipReadNotifications, "skip-read", false, "don't delete read notifications")
-	flag.BoolVar(&dryRun, "dry-run", false, "dry run without deleting anything")
-	flag.IntVar(&numWorkers, "workers", runtime.NumCPU(), "number of workers")
+	flag.BoolVarP(&skipPRsFromBots, "skip-bots", "b", false, "don't delete notifications on PRs from bots")
+	flag.BoolVarP(&skipClosedPRs, "skip-closed", "c", false, "don't delete notifications on closed / merged PRs")
+	flag.BoolVarP(&skipReadNotifications, "skip-read", "r", false, "don't delete read notifications")
+	flag.BoolVarP(&dryRun, "dry-run", "n", false, "dry run without deleting anything")
+	flag.IntVarP(&numWorkers, "workers", "w", runtime.NumCPU(), "number of workers")
 	// TODO get rid of this and store offsets in a file
-	flag.IntVar(&haltAfter, "halt-after", 50, "stop after a given number of read messages in a row, set to 0 to never stop")
+	flag.IntVarP(&haltAfter, "halt-after", "s", 50, "stop after a given number of read messages in a row, set to 0 to never stop")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "`gh flush` deletes all GitHub notifications that are from bots,\nand/or are about closed pull requests\n\nUsage:\n")
 		flag.PrintDefaults()
