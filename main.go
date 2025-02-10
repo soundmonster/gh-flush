@@ -80,8 +80,14 @@ func main() {
 	notifications := make(chan Notification, numWorkers)
 	statuses := make(chan NotificationResult, numWorkers)
 	results := make(chan NotificationResult, numWorkers)
+	notifications_arr := fetchNotifications()
 
-	go streamNotifications(notifications)
+	go func() {
+		defer close(notifications)
+		for _, n := range notifications_arr {
+			notifications <- n
+		}
+	}()
 
 	wg_fetcher := new(sync.WaitGroup)
 	wg_fetcher.Add(numWorkers)
@@ -100,8 +106,7 @@ func main() {
 	fmt.Println("Done 🎉")
 }
 
-func streamNotifications(notificationsChan chan<- Notification) {
-	defer close(notificationsChan)
+func fetchNotifications() []Notification {
 	requestPath := "notifications?all=true"
 	page := 1
 	client, err := api.DefaultRESTClient()
@@ -110,6 +115,11 @@ func streamNotifications(notificationsChan chan<- Notification) {
 	}
 
 	readStreak := 0
+	notification_arr := []Notification{}
+
+	fmt.Printf("Fetching notifications... ")
+
+loadNotifications:
 	for {
 		response, err := client.Request(http.MethodGet, requestPath, nil)
 		notifications := []Notification{}
@@ -127,18 +137,21 @@ func streamNotifications(notificationsChan chan<- Notification) {
 			} else {
 				readStreak++
 				if haltAfter > 0 && readStreak >= haltAfter {
-					return
+					break loadNotifications
 				}
 			}
-			notificationsChan <- notification
+			notification_arr = append(notification_arr, notification)
 		}
 
 		var hasNextPage bool
 		if requestPath, hasNextPage = findNextPage(response); !hasNextPage {
-			break
+			break loadNotifications
 		}
 		page++
 	}
+	fmt.Printf("done. Loaded %d notifications.\n", len(notification_arr))
+
+	return notification_arr
 }
 
 var linkRE = regexp.MustCompile(`<([^>]+)>;\s*rel="([^"]+)"`)
@@ -244,6 +257,3 @@ func printResults(results <-chan NotificationResult) {
 		fmt.Printf("%s\t%s[%s] %s\n", result.Notification.UpdatedAt, reason, result.Notification.Repository.FullName, result.Notification.Subject.Title)
 	}
 }
-
-// For more examples of using go-gh, see:
-// https://github.com/cli/go-gh/blob/trunk/example_gh_test.go
