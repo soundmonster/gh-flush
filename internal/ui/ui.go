@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -37,6 +39,8 @@ type model struct {
 	channelFrom         chan string
 	spinner             spinner.Model
 	progress            progress.Model
+	keys                keyMap
+	help                help.Model
 }
 
 var (
@@ -60,6 +64,25 @@ var (
 	tsStyle      = lipgloss.NewStyle().Foreground(blue).Italic(true)
 )
 
+type keyMap struct {
+	Quit key.Binding
+}
+
+var defaultKeyMap = keyMap{
+	Quit: key.NewBinding(
+		key.WithKeys("q", "ctrl+c", "esc"),
+		key.WithHelp("q/esc", "quit"),
+	),
+}
+
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Quit}
+}
+
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{{k.Quit}}
+}
+
 func newModel(flushClient *client.Client) model {
 	p := progress.New(
 		progress.WithDefaultGradient(),
@@ -77,6 +100,8 @@ func newModel(flushClient *client.Client) model {
 		channelFrom:         make(chan string),
 		spinner:             s,
 		progress:            p,
+		keys:                defaultKeyMap,
+		help:                help.New(),
 	}
 }
 
@@ -89,8 +114,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "esc", "q":
+		switch {
+		case key.Matches(msg, defaultKeyMap.Quit):
+			// TODO make sure to quit immediately and abort all pending deletions
 			return m, tea.Quit
 		}
 	case processedNotificationMsg:
@@ -137,21 +163,24 @@ func (m model) View() string {
 	n := m.numTotal
 	w := lipgloss.Width(fmt.Sprintf("%d", n))
 
+	helpView := ""
 	var result string
 	switch m.uiMode {
 	case loadingNotifications:
+		helpView = m.help.View(m.keys)
 		result = loadingStyle.Render(fmt.Sprintf("%s 🚽 Loading notifications ...", m.spinner.View()))
 	case flushingNotifications:
+		helpView = m.help.View(m.keys)
 		notificationCount := fmt.Sprintf(" %*d/%*d", w, m.numProcessed, w, n)
-		result = fmt.Sprintf("\n\n%s %s\n\n", m.progress.View(), notificationCount)
+		result = fmt.Sprintf("\n\n%s %s", m.progress.View(), notificationCount)
 	case done:
 		boldStyle := lipgloss.NewStyle().Bold(true)
 		processed := boldStyle.Render(strconv.Itoa(m.numProcessed))
 		flushed := boldStyle.Render(strconv.Itoa(m.numFlushed))
 		done := boldStyle.Render("Done!")
-		result = doneStyle.Render(fmt.Sprintf("🎉 %s Processed %s notifications, flushed %s 🚽\n", done, processed, flushed))
+		result = doneStyle.Render(fmt.Sprintf("🎉 %s Processed %s notifications, flushed %s 🚽", done, processed, flushed))
 	}
-	return result
+	return result + "\n" + helpView
 }
 
 func tag(s string, c lipgloss.TerminalColor) string {
