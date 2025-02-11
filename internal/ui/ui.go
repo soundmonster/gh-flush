@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/progress"
@@ -139,12 +140,16 @@ func (m model) View() string {
 	var result string
 	switch m.uiMode {
 	case loadingNotifications:
-		result = loadingStyle.Render(fmt.Sprintf("%s Loading...", m.spinner.View()))
+		result = loadingStyle.Render(fmt.Sprintf("%s 🚽 Loading notifications ...", m.spinner.View()))
 	case flushingNotifications:
 		notificationCount := fmt.Sprintf(" %*d/%*d", w, m.numProcessed, w, n)
 		result = fmt.Sprintf("\n\n%s %s\n\n", m.progress.View(), notificationCount)
 	case done:
-		result = doneStyle.Render(fmt.Sprintf("🎉 Done! Processed %d notifications, flushed %d.\n", m.numProcessed, m.numFlushed))
+		boldStyle := lipgloss.NewStyle().Bold(true)
+		processed := boldStyle.Render(strconv.Itoa(m.numProcessed))
+		flushed := boldStyle.Render(strconv.Itoa(m.numFlushed))
+		done := boldStyle.Render("Done!")
+		result = doneStyle.Render(fmt.Sprintf("🎉 %s Processed %s notifications, flushed %s 🚽\n", done, processed, flushed))
 	}
 	return result
 }
