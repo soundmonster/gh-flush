@@ -26,6 +26,7 @@ type model struct {
 	notificationResults []client.NotificationResult
 	numTotal            int
 	numProcessed        int
+	numFlushed          int
 	width               int
 	height              int
 	channelTo           chan string
@@ -86,16 +87,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case processedNotificationMsg:
-		notification := msg
+		res := client.NotificationResult(msg)
 		m.numProcessed++
-		m.notificationResults = append(m.notificationResults, client.NotificationResult(notification))
+		if res.Deleted {
+			m.numFlushed++
+		}
+		m.notificationResults = append(m.notificationResults, res)
 
 		// Update progress bar
-		progressCmd := m.progress.SetPercent(float64(m.numProcessed) / float64(m.flushClient.NotificationCount()))
+		progressCmd := m.progress.SetPercent(float64(m.numProcessed) / float64(m.numTotal))
 
 		return m, tea.Batch(
 			progressCmd,
-			tea.Println(formatNotification(client.NotificationResult(notification))),
+			tea.Println(formatNotificationResult(res)),
 			recvProcessed(m), // download the next notification
 		)
 	case finishedMsg:
@@ -104,6 +108,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit // exit the program
 	case notificationsFetchedMsg:
 		m.uiMode = flushingNotifications
+		m.numTotal = m.flushClient.NotificationCount()
 		m.flushClient.ProcessNotifications()
 
 		return m, recvProcessed(m)
@@ -122,7 +127,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	n := m.flushClient.NotificationCount()
+	n := m.numTotal
 	w := lipgloss.Width(fmt.Sprintf("%d", n))
 
 	var result string
@@ -133,14 +138,7 @@ func (m model) View() string {
 		notificationCount := fmt.Sprintf(" %*d/%*d", w, m.numProcessed, w, n)
 		result = fmt.Sprintf("\n\n%s %s\n\n", m.progress.View(), notificationCount)
 	case done:
-		flushed := len(m.notificationResults)
-		rainbow := ""
-		for i := 0; i < 16; i++ {
-			style := lipgloss.NewStyle().Background(lipgloss.ANSIColor(i)).Foreground(lipgloss.ANSIColor(i))
-			rainbow += fmt.Sprintf(" %d: ", i)
-			rainbow += style.Render("   ")
-		}
-		result = doneStyle.Render(fmt.Sprintf("🎉 Done! Processed %d notifications, flushed %d.\n%s\n", n, flushed, rainbow))
+		result = doneStyle.Render(fmt.Sprintf("🎉 Done! Processed %d notifications, flushed %d.\n", m.numProcessed, m.numFlushed))
 	}
 	return result
 }
@@ -149,7 +147,7 @@ func tag(s string, c lipgloss.TerminalColor) string {
 	return lipgloss.NewStyle().Foreground(c).Render(fmt.Sprintf("[%s]", s))
 }
 
-func formatNotification(res client.NotificationResult) string {
+func formatNotificationResult(res client.NotificationResult) string {
 	var action string
 	if res.Deleted {
 		action = deleteMark.Render()
