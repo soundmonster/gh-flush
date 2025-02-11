@@ -50,21 +50,55 @@ const (
 	Deleted  = "❌"
 )
 
-var skipPRsFromBots bool
-var skipClosedPRs bool
-var skipReadNotifications bool
-var dryRun bool
-var numWorkers int
-var haltAfter int
+type Options struct {
+	SkipPRsFromBots       bool
+	SkipClosedPRs         bool
+	SkipReadNotifications bool
+	DryRun                bool
+	NumWorkers            int
+	HaltAfter             int
+}
 
 func main() {
-	flag.BoolVarP(&skipPRsFromBots, "skip-bots", "b", false, "don't delete notifications on PRs from bots")
-	flag.BoolVarP(&skipClosedPRs, "skip-closed", "c", false, "don't delete notifications on closed / merged PRs")
-	flag.BoolVarP(&skipReadNotifications, "skip-read", "r", false, "don't delete read notifications")
-	flag.BoolVarP(&dryRun, "dry-run", "n", false, "dry run without deleting anything")
-	flag.IntVarP(&numWorkers, "workers", "w", runtime.NumCPU(), "number of workers")
+	opts := parseOptions()
+	notifications := make(chan Notification, opts.NumWorkers)
+	statuses := make(chan NotificationResult, opts.NumWorkers)
+	results := make(chan NotificationResult, opts.NumWorkers)
+	notifications_arr := fetchNotifications(opts)
+
+	go func() {
+		defer close(notifications)
+		for _, n := range notifications_arr {
+			notifications <- n
+		}
+	}()
+
+	wg_fetcher := new(sync.WaitGroup)
+	wg_fetcher.Add(opts.NumWorkers)
+	wg_deleter := new(sync.WaitGroup)
+	wg_deleter.Add(opts.NumWorkers)
+
+	for i := 0; i < opts.NumWorkers; i++ {
+		go tagNotifications(notifications, statuses, wg_fetcher, opts)
+		go deleteNotifications(statuses, results, wg_deleter, opts)
+	}
+
+	go func() { wg_fetcher.Wait(); close(statuses) }()
+	go func() { wg_deleter.Wait(); close(results) }()
+
+	printResults(results)
+	fmt.Println("Done 🎉")
+}
+
+func parseOptions() *Options {
+	opts := new(Options)
+	flag.BoolVarP(&opts.SkipPRsFromBots, "skip-bots", "b", false, "don't delete notifications on PRs from bots")
+	flag.BoolVarP(&opts.SkipClosedPRs, "skip-closed", "c", false, "don't delete notifications on closed / merged PRs")
+	flag.BoolVarP(&opts.SkipReadNotifications, "skip-read", "r", false, "don't delete read notifications")
+	flag.BoolVarP(&opts.DryRun, "dry-run", "n", false, "dry run without deleting anything")
+	flag.IntVarP(&opts.NumWorkers, "workers", "w", runtime.NumCPU(), "number of workers")
 	// TODO get rid of this and store offsets in a file
-	flag.IntVarP(&haltAfter, "halt-after", "s", 50, "stop after a given number of read messages in a row, set to 0 to never stop")
+	flag.IntVarP(&opts.HaltAfter, "halt-after", "s", 50, "stop after a given number of read messages in a row, set to 0 to never stop")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "`gh flush` deletes all GitHub notifications that are from bots,\nand/or are about closed pull requests\n\nUsage:\n")
 		flag.PrintDefaults()
@@ -76,37 +110,10 @@ func main() {
 		msg := fmt.Sprintf("unexpected arguments: %v", args)
 		panic(msg)
 	}
-
-	notifications := make(chan Notification, numWorkers)
-	statuses := make(chan NotificationResult, numWorkers)
-	results := make(chan NotificationResult, numWorkers)
-	notifications_arr := fetchNotifications()
-
-	go func() {
-		defer close(notifications)
-		for _, n := range notifications_arr {
-			notifications <- n
-		}
-	}()
-
-	wg_fetcher := new(sync.WaitGroup)
-	wg_fetcher.Add(numWorkers)
-	wg_deleter := new(sync.WaitGroup)
-	wg_deleter.Add(numWorkers)
-
-	for i := 0; i < numWorkers; i++ {
-		go tagNotifications(notifications, statuses, wg_fetcher)
-		go deleteNotifications(statuses, results, wg_deleter)
-	}
-
-	go func() { wg_fetcher.Wait(); close(statuses) }()
-	go func() { wg_deleter.Wait(); close(results) }()
-
-	printResults(results)
-	fmt.Println("Done 🎉")
+	return opts
 }
 
-func fetchNotifications() []Notification {
+func fetchNotifications(opts *Options) []Notification {
 	requestPath := "notifications?all=true"
 	page := 1
 	client, err := api.DefaultRESTClient()
@@ -136,7 +143,7 @@ loadNotifications:
 				readStreak = 0
 			} else {
 				readStreak++
-				if haltAfter > 0 && readStreak >= haltAfter {
+				if opts.HaltAfter > 0 && readStreak >= opts.HaltAfter {
 					break loadNotifications
 				}
 			}
@@ -165,7 +172,7 @@ func findNextPage(response *http.Response) (string, bool) {
 	return "", false
 }
 
-func tagNotifications(notifications <-chan Notification, statuses chan<- NotificationResult, wg *sync.WaitGroup) {
+func tagNotifications(notifications <-chan Notification, statuses chan<- NotificationResult, wg *sync.WaitGroup, opts *Options) {
 	defer wg.Done()
 
 	client, err := api.DefaultRESTClient()
@@ -175,7 +182,7 @@ func tagNotifications(notifications <-chan Notification, statuses chan<- Notific
 	for notification := range notifications {
 		result := NotificationResult{Notification: notification}
 
-		if !notification.Unread && !skipReadNotifications {
+		if !notification.Unread && !opts.SkipReadNotifications {
 			result.Read = true
 		}
 
@@ -204,7 +211,7 @@ func closedPR(pullRequest *PullRequest) bool {
 	return pullRequest.State == "closed"
 }
 
-func deleteNotifications(statuses <-chan NotificationResult, results chan<- NotificationResult, wg *sync.WaitGroup) {
+func deleteNotifications(statuses <-chan NotificationResult, results chan<- NotificationResult, wg *sync.WaitGroup, opts *Options) {
 	defer wg.Done()
 	client, err := api.DefaultRESTClient()
 	if err != nil {
@@ -212,17 +219,17 @@ func deleteNotifications(statuses <-chan NotificationResult, results chan<- Noti
 	}
 
 	for status := range statuses {
-		if status.BotPR && !skipPRsFromBots {
+		if status.BotPR && !opts.SkipPRsFromBots {
 			status.Deleted = true
 		}
-		if status.ClosedPR && !skipClosedPRs {
+		if status.ClosedPR && !opts.SkipClosedPRs {
 			status.Deleted = true
 		}
-		if status.Read && !skipReadNotifications {
+		if status.Read && !opts.SkipReadNotifications {
 			status.Deleted = true
 		}
 
-		if status.Deleted && !dryRun {
+		if status.Deleted && !opts.DryRun {
 			err := client.Delete(status.Notification.Url, nil)
 			if err != nil {
 				panic(err)
