@@ -3,11 +3,14 @@ package ui
 import (
 	"fmt"
 	"os"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	humanize "github.com/dustin/go-humanize"
 
 	"github.com/soundmonster/gh-flush/internal/client"
 )
@@ -39,6 +42,7 @@ var (
 	red     = lipgloss.ANSIColor(1)
 	green   = lipgloss.ANSIColor(2)
 	yellow  = lipgloss.ANSIColor(3)
+	blue    = lipgloss.ANSIColor(4)
 	magenta = lipgloss.ANSIColor(5)
 	gray    = lipgloss.ANSIColor(7)
 	white   = lipgloss.ANSIColor(15)
@@ -50,7 +54,9 @@ var (
 	checkMark    = lipgloss.NewStyle().Foreground(green).SetString("✓")
 	repoStyle    = lipgloss.NewStyle().Foreground(magenta).Italic(true)
 	subjectStyle = lipgloss.NewStyle().Foreground(white)
+	deletedStyle = lipgloss.NewStyle().Foreground(gray).Strikethrough(true)
 	userStyle    = lipgloss.NewStyle().Foreground(gray)
+	tsStyle      = lipgloss.NewStyle().Foreground(blue).Italic(true)
 )
 
 func newModel(flushClient *client.Client) model {
@@ -99,7 +105,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, tea.Batch(
 			progressCmd,
-			tea.Println(formatNotificationResult(res)),
+			tea.Println(formatNotificationResult(m, res)),
 			recvProcessed(m), // download the next notification
 		)
 	case finishedMsg:
@@ -147,19 +153,22 @@ func tag(s string, c lipgloss.TerminalColor) string {
 	return lipgloss.NewStyle().Foreground(c).Render(fmt.Sprintf("[%s]", s))
 }
 
-func formatNotificationResult(res client.NotificationResult) string {
+func formatNotificationResult(m model, res client.NotificationResult) string {
 	var action string
+	var subject string
 	if res.Deleted {
 		action = deleteMark.Render()
+		subject = deletedStyle.Render(res.Notification.Subject.Title)
 	} else {
 		action = checkMark.Render()
+		subject = subjectStyle.Render(res.Notification.Subject.Title)
 	}
 	repo := repoStyle.Render(res.Notification.Repository.FullName)
-	subject := subjectStyle.Render(res.Notification.Subject.Title)
 	user := ""
 	if res.PR != nil {
 		user = userStyle.Render(" by " + res.PR.User.Login)
 	}
+	ts := tsStyle.Render(" " + humanize.Time(res.Notification.UpdatedAt))
 
 	tags := ""
 	if res.BotPR {
@@ -171,8 +180,16 @@ func formatNotificationResult(res client.NotificationResult) string {
 	if res.Read {
 		tags += " " + tag("read", magenta)
 	}
+	result := fmt.Sprintf("%s %s in %s%s%s%s", action, subject, repo, user, ts, tags)
+	if m.width < rawLen(result) {
+		lineBreak := "\n  "
+		result = fmt.Sprintf("%s %s%sin %s%s%s%s", action, subject, lineBreak, repo, user, ts, tags)
+	}
+	return result
+}
 
-	return fmt.Sprintf("%s %s %s%s%s", action, repo, subject, user, tags)
+func rawLen(s string) int {
+	return utf8.RuneCountInString(ansi.Strip(s))
 }
 
 type processedNotificationMsg client.NotificationResult

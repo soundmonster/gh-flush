@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"runtime"
 	"sync"
+	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -231,7 +232,8 @@ func (client *Client) PrintResults() {
 			reason += " "
 		}
 
-		fmt.Printf("%s\t%s[%s] %s\n", result.Notification.UpdatedAt, reason, result.Notification.Repository.FullName, result.Notification.Subject.Title)
+		ts := result.Notification.UpdatedAt.Format(time.RFC3339)
+		fmt.Printf("%s\t%s[%s] %s\n", ts, reason, result.Notification.Repository.FullName, result.Notification.Subject.Title)
 		result, ok = client.GetNotificationResult()
 	}
 }

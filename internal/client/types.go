@@ -1,6 +1,9 @@
 package client
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 type Client struct {
 	opts          *Options
@@ -17,7 +20,7 @@ type Notification struct {
 	Reason     string
 	Url        string
 	Unread     bool
-	UpdatedAt  string `json:"updated_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 	Repository struct {
 		FullName string `json:"full_name"`
 	}

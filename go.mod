@@ -14,6 +14,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.1 // indirect
 	github.com/cli/safeexec v1.0.0 // indirect
 	github.com/cli/shurcooL-graphql v0.0.4 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/henvic/httpretty v0.0.6 // indirect
 	github.com/kr/text v0.2.0 // indirect
