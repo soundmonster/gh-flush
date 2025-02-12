@@ -52,6 +52,7 @@ var (
 )
 var (
 	loadingStyle = lipgloss.NewStyle().Margin(1, 1)
+	helpStyle    = lipgloss.NewStyle().Margin(1, 1)
 	doneStyle    = lipgloss.NewStyle().Margin(1, 1)
 	deleteMark   = lipgloss.NewStyle().Foreground(red).SetString("⨉")
 	checkMark    = lipgloss.NewStyle().Foreground(green).SetString("✓")
@@ -83,9 +84,11 @@ func (k keyMap) FullHelp() [][]key.Binding {
 
 func newModel(flushClient *client.Client) model {
 	p := progress.New(
-		progress.WithDefaultGradient(),
+		progress.WithGradient("#a463ff", "#358aff"),
 		progress.WithWidth(60),
+		progress.WithFillCharacters('━', '━'),
 		progress.WithoutPercentage(),
+		func(m *progress.Model) { m.EmptyColor = "#aaaaaa" },
 	)
 	s := spinner.New()
 	s.Style = lipgloss.NewStyle().Foreground(magenta)
@@ -165,12 +168,12 @@ func (m model) View() string {
 	var result string
 	switch m.uiMode {
 	case loadingNotifications:
-		helpView = m.help.View(m.keys)
+		helpView = helpStyle.Render(m.help.View(m.keys))
 		result = loadingStyle.Render(fmt.Sprintf("%s 🚽 Loading notifications ...", m.spinner.View()))
 	case flushingNotifications:
-		helpView = m.help.View(m.keys)
+		helpView = helpStyle.Render(m.help.View(m.keys))
 		notificationCount := fmt.Sprintf(" %*d/%*d", w, m.numProcessed, w, n)
-		result = fmt.Sprintf("\n\n%s %s", m.progress.View(), notificationCount)
+		result = loadingStyle.Render(fmt.Sprintf("%s %s", m.progress.View(), notificationCount))
 	case done:
 		boldStyle := lipgloss.NewStyle().Bold(true)
 		processed := boldStyle.Render(strconv.Itoa(m.numProcessed))
@@ -178,7 +181,7 @@ func (m model) View() string {
 		done := boldStyle.Render("Done!")
 		result = doneStyle.Render(fmt.Sprintf("🎉 %s Processed %s notifications, flushed %s 🚽", done, processed, flushed))
 	}
-	return result + "\n" + helpView
+	return result + helpView
 }
 
 func tag(s string, c lipgloss.TerminalColor) string {
