@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -12,7 +11,6 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 	humanize "github.com/dustin/go-humanize"
 
 	"github.com/soundmonster/gh-flush/internal/client"
@@ -215,15 +213,11 @@ func formatNotificationResult(m model, res client.NotificationResult) string {
 		tags += " " + tag("read", magenta)
 	}
 	result := fmt.Sprintf("%s %s in %s%s%s%s", action, subject, repo, user, ts, tags)
-	if m.width < rawLen(result) {
+	if m.width < lipgloss.Width(result) {
 		lineBreak := "\n  "
 		result = fmt.Sprintf("%s %s%sin %s%s%s%s", action, subject, lineBreak, repo, user, ts, tags)
 	}
 	return result
-}
-
-func rawLen(s string) int {
-	return utf8.RuneCountInString(ansi.Strip(s))
 }
 
 type processedNotificationMsg client.NotificationResult
